@@ -136,6 +136,8 @@ class TestCustom(unittest.TestCase):
         logging.info('Running step {0} of test {1}, sending request to'
                      'path {2}'.format(step_name, context.get('name'), path))
 
+        configuration = self._evaluate_substitution(context, configuration)
+        logging.debug("Evaluated configuration: %s", configuration)
         test_endpoint = urlparse.urljoin(self._base_url, path)
         response = requests.request(method=configuration.get('method', 'GET'),
                                     url=test_endpoint,
@@ -183,7 +185,7 @@ class TestCustom(unittest.TestCase):
         for test in match:
             key = test.get('key')
             value = self._get_value_at_path(context, key)
-            pattern = test.get('pattern')
+            pattern = self._evaluate_substitution(context, test.get('pattern'))
             self.assertIsNotNone(re.search(pattern, value),
                                  'The value `{0}` for the key `{1}` '
                                  'do not match the pattern `{2}`'
@@ -249,3 +251,32 @@ class TestCustom(unittest.TestCase):
                 self.fail('When the field path is specified, the fields '
                           'validation and steps should not be present')
             return True
+
+    def _evaluate_substitution(self, context, target):
+        """ Substitute all fields (values only, not keys) starting with '{{'
+        and ending with '}}' in `target` by the value present in the context at
+        the path specified between the two symbols.
+
+        If the specified path does not correspond to a ket in the context, the
+        test will be considered as failed.
+
+        Args:
+            context: A dictionary containing the values that will be used for
+                     the substitution.
+            target: The variable on which the substitution will take place.
+
+        Returns:
+            A copy of the target with the substituted fields.
+        """
+        if (isinstance(target, (str, unicode)) and
+                target.startswith('{{') and target.endswith('}}')):
+            evaluated = self._get_value_at_path(context, target[2:-2])
+        elif isinstance(target, dict):
+            evaluated = {}
+            for key in target.iterkeys():
+                evaluated[key] = self._evaluate_substitution(context,
+                                                             target.get(key))
+        else:
+            evaluated = target
+
+        return evaluated
